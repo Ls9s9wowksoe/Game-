@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jogo de Clique</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --bg-card: #1a1a1a;
+    --accent: #ff4757;
+    --accent-hover: #ff6b81;
+    --text: #ffffff;
+    --success: #2ed573;
+    --danger: #ff4757;
+    --radius: 8px;
+    --transition: 0.15s;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,Roboto,Arial,sans-serif;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    min-height:100dvh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+  }
+  button{
+    cursor:pointer;
+    border:none;
+    border-radius:var(--radius);
+    padding:0.75rem 1.5rem;
+    font-size:1rem;
+    font-weight:600;
+    transition:transform var(--transition),background var(--transition),opacity var(--transition);
+  }
+  button:active{transform:scale(0.95);}
+  .btn-primary{background:var(--accent);color:var(--text);}
+  .btn-primary:hover{background:var(--accent-hover);}
+  .btn-restart{background:var(--accent);color:var(--text);margin-top:1rem;}
+  .screen{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:var(--bg);
+    padding:2rem;
+    text-align:center;
+  }
+  .screen h1{margin-bottom:1.5rem;font-size:clamp(1.75rem,4vw,3rem);}
+  .screen p{margin-bottom:1.5rem;font-size:1.125rem;opacity:0.8;max-width:28ch;}
+  #gameArea{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+  }
+  #hud{
+    position:fixed;
+    top:1rem;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--bg-card);
+    padding:0.5rem 1rem;
+    border-radius:var(--radius);
+    font-size:0.95rem;
+    opacity:0;
+    transition:opacity var(--transition);
+  }
+  #hud.active{opacity:1;}
+  .target-btn{
+    position:absolute;
+    width:48px;
+    height:48px;
+    padding:0;
+    font-size:0.8rem;
+    pointer-events:auto;
+    background:var(--accent);
+    color:var(--text);
+    border-radius:50%;
+    line-height:48px;
+    text-align:center;
+  }
+  .target-btn:active{transform:scale(0.9);}
+  .hidden{display:none !important;}
+  .win h1{color:var(--success);}
+  .lose h1{color:var(--danger);}
+  @media (max-width:480px){
+    .target-btn{width:40px;height:40px;line-height:40px;font-size:0.75rem;}
+  }
+</style>
+</head>
+<body>
+
+<div id="startScreen" class="screen">
+  <h1>Jogo de Clique</h1>
+  <p>Clique nos 10 botões que aparecem aleatoriamente antes que desapareçam. Está pronto?</p>
+  <button class="btn-primary" id="startBtn">Jogar</button>
+</div>
+
+<div id="hud" class="">Acertos: <span id="hitsText">0</span>/10</div>
+<div id="gameArea" class="hidden" aria-live="polite"></div>
+
+<div id="winScreen" class="screen hidden win">
+  <h1>Parabéns!</h1>
+  <p>Você clicou em todos os 10 botões!</p>
+  <button class="btn-restart" data-restart>Jogar de novo</button>
+</div>
+
+<div id="loseScreen" class="screen hidden lose">
+  <h1>Game Over</h1>
+  <p>Você deixou um alvo escapar. Tente novamente!</p>
+  <button class="btn-restart" data-restart>Jogar de novo</button>
+</div>
+
+<script>
+(function(){
+  const TOTAL_ALVOS = 10;
+  const TEMPO_ALVO_MS = 800;
+  const ATRASO_INICIO_MS = 600;
+  const MARGEM_BORDA_PX = 60;
+
+  const startScreen = document.getElementById('startScreen');
+  const startBtn = document.getElementById('startBtn');
+  const gameArea = document.getElementById('gameArea');
+  const hud = document.getElementById('hud');
+  const hitsText = document.getElementById('hitsText');
+  const winScreen = document.getElementById('winScreen');
+  const loseScreen = document.getElementById('loseScreen');
+  const restartBtns = document.querySelectorAll('[data-restart]');
+
+  let hits = 0;
+  let alvoTimeout = null;
+  let jogoAtivo = false;
+
+  function mostrar(element){ element.classList.remove('hidden'); }
+  function esconder(element){ element.classList.add('hidden'); }
+
+  function resetar(){
+    hits = 0;
+    atualizarHud();
+    limparAlvo();
+    jogoAtivo = false;
+  }
+
+  function atualizarHud(){
+    hitsText.textContent = hits;
+  }
+
+  function iniciarJogo(){
+    resetar();
+    esconder(startScreen);
+    esconder(winScreen);
+    esconder(loseScreen);
+    mostrar(gameArea);
+    hud.classList.add('active');
+    jogoAtivo = true;
+    setTimeout(spawnAlvo, ATRASO_INICIO_MS);
+  }
+
+  function fimVitoria(){
+    jogoAtivo = false;
+    esconder(gameArea);
+    hud.classList.remove('active');
+    mostrar(winScreen);
+  }
+
+  function fimDerrota(){
+    jogoAtivo = false;
+    esconder(gameArea);
+    hud.classList.remove('active');
+    mostrar(loseScreen);
+  }
+
+  function limparAlvo(){
+    clearTimeout(alvoTimeout);
+    const alvoExistente = document.querySelector('.target-btn');
+    if(alvoExistente) alvoExistente.remove();
+  }
+
+  function spawnAlvo(){
+    if(!jogoAtivo) return;
+    if(hits >= TOTAL_ALVOS){
+      fimVitoria();
+      return;
+    }
+
+    limparAlvo();
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'target-btn';
+    btn.textContent = hits + 1;
+    btn.setAttribute('aria-label', 'Alvo ' + (hits + 1));
+    btn.addEventListener('click', acertouAlvo);
+
+    const { width: gw, height: gh } = gameArea.getBoundingClientRect();
+    const btnSize = 48;
+    const maxX = gw - MARGEM_BORDA_PX - btnSize;
+    const maxY = gh - MARGEM_BORDA_PX - btnSize;
+    const minX = MARGEM_BORDA_PX;
+    const minY = MARGEM_BORDA_PX;
+    const x = Math.random() * (maxX - minX) + minX;
+    const y = Math.random() * (maxY - minY) + minY;
+    btn.style.left = x + 'px';
+    btn.style.top = y + 'px';
+
+    gameArea.appendChild(btn);
+
+    alvoTimeout = setTimeout(()=>{
+      if(!btn.isConnected) return;
+      fimDerrota();
+    }, TEMPO_ALVO_MS);
+  }
+
+  function acertouAlvo(evt){
+    if(!jogoAtivo) return;
+    evt.currentTarget.remove();
+    clearTimeout(alvoTimeout);
+    hits++;
+    atualizarHud();
+    requestAnimationFrame(()=>spawnAlvo());
+  }
+
+  startBtn.addEventListener('click', iniciarJogo);
+  restartBtns.forEach(btn=>{
+    btn.addEventListener('click', iniciarJogo);
+  });
+
+  window.addEventListener('resize', ()=>{
+    if(!jogoAtivo) return;
+    clearTimeout(alvoTimeout);
+    spawnAlvo();
+  });
+})();
+</script>
+</body>
+</html>
